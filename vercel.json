@@ -1,0 +1,12 @@
+{
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "/api/:path*"
+    }
+  ],
+  "env": {
+    "MODAL_API_URL": "@modal_api_url",
+    "MODAL_API_KEY": "@modal_api_key"
+  }
+} 
