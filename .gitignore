@@ -39,5 +39,5 @@ frontend-integration.md
 .env.development.local
 .env.test.local
 .env.production.local
-
+verceldeploy.md
 test.py
