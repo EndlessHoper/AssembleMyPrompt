@@ -4,5 +4,10 @@
       "source": "/api/:path*",
       "destination": "/api/:path*"
     }
-  ]
+  ],
+  "functions": {
+    "api/**/*": {
+      "runtime": "nodejs22.x"
+    }
+  }
 } 
