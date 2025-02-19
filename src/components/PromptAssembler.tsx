@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, ChangeEvent } from 'react';
 import {
   createEditor,
   Descendant,
@@ -6,18 +6,20 @@ import {
   Editor,
   Range,
   Element as SlateElement,
+  BaseRange,
 } from 'slate';
 import { Slate, Editable, withReact, ReactEditor } from 'slate-react';
-import { FileText, Upload } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
-import { useToast } from '@/hooks/use-toast';
+import { FileText, Upload, Link as LinkIcon } from 'lucide-react';
+import { Button } from '../components/ui/button';
+import { Card } from '../components/ui/card';
+import { useToast } from '../hooks/use-toast';
 import { marked } from 'marked';
 import { useDropzone } from 'react-dropzone';
 import { FileMention } from './FileMention';
 import { UrlMention } from './UrlMention';
 import { FilesContext, FileData } from '../contexts/FilesContext';
-import { URL_REGEX, generateFilenameFromUrl, fetchUrlContent, UrlMentionElement } from '../lib/urlFetcher';
+import { URL_REGEX, generateFilenameFromUrl, fetchUrlContent, UrlMentionElement, normalizeUrl } from '../lib/urlFetcher';
+import { Input } from '../components/ui/input';
 
 // Define custom types for file mentions
 type FileMentionElement = {
@@ -56,43 +58,41 @@ const withMentions = (editor: Editor) => {
 const initialValue: Descendant[] = [
   {
     type: 'paragraph',
-    children: [{ text: 'Type @ to mention a file or paste a URL...' }],
+    children: [{ text: '' }],
   },
 ];
 
+interface EditorProps {
+  attributes: React.HTMLAttributes<HTMLDivElement>;
+  children: React.ReactNode;
+  element: any;
+}
+
 export const PromptAssembler = () => {
   const editor = useMemo(() => withMentions(withReact(createEditor())), []);
-  const [editorValue, setEditorValue] = useState<Descendant[]>([{
-    type: 'paragraph',
-    children: [{ text: '' }],
-  }]);
-  const [showPlaceholder, setShowPlaceholder] = useState(true);
+  const [editorValue, setEditorValue] = useState<Descendant[]>(initialValue);
   const [target, setTarget] = useState<Range | null>(null);
   const [search, setSearch] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [files, setFiles] = useState<FileData[]>([]);
+  const [urlInput, setUrlInput] = useState('');
   const { toast } = useToast();
 
   // Handle focus
   const handleFocus = useCallback(() => {
-    setShowPlaceholder(false);
+    // No need to manage placeholder state as it's handled by Slate
   }, []);
 
   // Handle blur
   const handleBlur = useCallback(() => {
-    // Only show placeholder if editor is empty
-    const isEditorEmpty = editorValue.length === 1 && 
-      SlateElement.isElement(editorValue[0]) && 
-      editorValue[0].children.length === 1 && 
-      editorValue[0].children[0].text === '';
-    setShowPlaceholder(isEditorEmpty);
-  }, [editorValue]);
+    // No need to manage placeholder state as it's handled by Slate
+  }, []);
 
   const filteredFiles = files.filter(file =>
     file.fileName.toLowerCase().includes(search.toLowerCase())
   );
 
-  const renderElement = useCallback((props) => {
+  const renderElement = useCallback((props: EditorProps) => {
     const { attributes, children, element } = props;
     if (element.type === 'file-mention') {
       return <FileMention {...props} />;
@@ -116,7 +116,7 @@ export const PromptAssembler = () => {
       if (mentionMatch) {
         const matchStart = wordBefore && Editor.before(editor, start, { distance: mentionMatch[0].length - mentionMatch[1].length });
         const matchRange = matchStart && Editor.range(editor, matchStart, start);
-        setTarget(matchRange);
+        setTarget(matchRange || null);
         setSearch(mentionMatch[1]);
         setSelectedIndex(0);
         return;
@@ -248,69 +248,101 @@ export const PromptAssembler = () => {
     toast({ title: 'Prompt downloaded!', description: 'Saved as prompt.md' });
   };
 
-  // Process pasted text for URLs
+  // Process pasted text
   const handlePaste = useCallback(
-    async (event: React.ClipboardEvent<HTMLDivElement>) => {
+    (event: React.ClipboardEvent<HTMLDivElement>) => {
       event.preventDefault();
-      const pastedText = event.clipboardData.getData('text');
-      
-      // Check if the pasted text contains a URL
-      const urlMatch = pastedText.match(URL_REGEX);
-      if (urlMatch) {
-        const url = urlMatch[0];
-        const fileName = generateFilenameFromUrl(url);
-        
-        // Create URL mention node
-        const urlNode: UrlMentionElement = {
-          type: 'url-mention',
-          url,
-          fileName,
-          children: [{ text: '' }],
-        };
-        
-        // Insert the URL mention
-        Transforms.insertNodes(editor, urlNode);
-        
-        // Fetch and process the URL content
-        toast({ title: 'Fetching URL...', description: url });
-        try {
-          const content = await fetchUrlContent(url);
-          
-          // Add the fetched content as a new file
-          const newFile = {
-            id: Math.random().toString(),
-            fileName,
-            content,
-          };
-          
-          setFiles(prevFiles => [...prevFiles, newFile]);
-          toast({ title: 'URL fetched!', description: `Saved as ${fileName}` });
-        } catch (error) {
-          console.error('Error processing URL:', error);
-          toast({ 
-            title: 'Error fetching URL', 
-            description: 'Failed to fetch content. Please try again.',
-            variant: 'destructive'
-          });
-        }
-      } else {
-        // Handle regular paste
-        const fragment = event.clipboardData.getData('text/plain');
-        const nodes: ParagraphElement[] = fragment.split('\n').map(line => ({
-          type: 'paragraph' as const,
-          children: [{ text: line }],
-        }));
-        Transforms.insertNodes(editor, nodes);
-      }
+      const fragment = event.clipboardData.getData('text/plain');
+      const nodes: ParagraphElement[] = fragment.split('\n').map(line => ({
+        type: 'paragraph' as const,
+        children: [{ text: line }],
+      }));
+      Transforms.insertNodes(editor, nodes);
     },
-    [editor, toast]
+    [editor]
   );
+
+  // Handle URL fetch
+  const handleUrlFetch = async () => {
+    if (!urlInput.trim()) {
+      toast({ 
+        title: 'Error', 
+        description: 'Please enter a URL',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    if (!URL_REGEX.test(urlInput.trim())) {
+      toast({ 
+        title: 'Error', 
+        description: 'Please enter a valid URL',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    const normalizedUrl = normalizeUrl(urlInput.trim());
+    const fileName = generateFilenameFromUrl(normalizedUrl);
+    
+    // Check if file with same name already exists
+    if (files.some(f => f.fileName === fileName)) {
+      toast({ 
+        title: 'Error', 
+        description: 'A file with this name already exists',
+        variant: 'destructive'
+      });
+      return;
+    }
+    
+    // Fetch and process the URL content
+    toast({ title: 'Fetching URL...', description: normalizedUrl });
+    try {
+      const content = await fetchUrlContent(normalizedUrl);
+      
+      // Add the fetched content as a new file
+      const newFile = {
+        id: Math.random().toString(),
+        fileName,
+        content,
+      };
+      
+      setFiles(prevFiles => [...prevFiles, newFile]);
+      toast({ title: 'URL fetched!', description: `Saved as ${fileName}` });
+      setUrlInput(''); // Clear the input after successful fetch
+    } catch (error) {
+      console.error('Error processing URL:', error);
+      toast({ 
+        title: 'Error fetching URL', 
+        description: 'Failed to fetch content. Please try again.',
+        variant: 'destructive'
+      });
+    }
+  };
+
+  const handleUrlInputChange = (e: ChangeEvent<HTMLInputElement>) => {
+    setUrlInput(e.target.value);
+  };
 
   return (
     <FilesContext.Provider value={{ files }}>
       <div className="p-6 max-w-4xl mx-auto">
         <Card className="p-4">
           <div className="mb-4 space-y-4">
+            <div className="flex gap-2">
+              <Input
+                type="url"
+                placeholder="Enter URL to fetch content..."
+                value={urlInput}
+                onChange={handleUrlInputChange}
+                className="flex-1"
+              />
+              <Button onClick={handleUrlFetch} disabled={!urlInput.trim()}>
+                <LinkIcon className="mr-2 h-4 w-4" />
+                Fetch URL
+              </Button>
+            </div>
+
             <div {...getRootProps()} className={`
               p-6 border-2 border-dashed rounded-lg cursor-pointer
               transition-colors duration-200 ease-in-out
@@ -373,12 +405,9 @@ export const PromptAssembler = () => {
                 onBlur={handleBlur}
                 onPaste={handlePaste}
                 className="min-h-[200px] p-4 border rounded-lg focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500" 
+                placeholder="Type @ to mention a file..."
+                autoFocus
               />
-              {showPlaceholder && (
-                <div className="absolute inset-0 pointer-events-none p-4 text-gray-400">
-                  Type @ to mention a file or paste a URL...
-                </div>
-              )}
               {target && filteredFiles.length > 0 && (
                 <div className="absolute z-10 mt-1 bg-white rounded-lg shadow-lg border border-gray-200 max-h-[200px] overflow-y-auto">
                   {filteredFiles.map((file, i) => (
