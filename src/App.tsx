@@ -9,15 +9,24 @@ import NotFound from "./pages/NotFound";
 const queryClient = new QueryClient();
 
 const App = () => (
-  <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Index />} />
+  <QueryClientProvider client={queryClient} data-oid="c49ahw9">
+    <TooltipProvider data-oid="mpvix11">
+      <Toaster data-oid="ff7.-xd" />
+      <Sonner data-oid="ve4vhey" />
+      <BrowserRouter data-oid="xqor31n">
+        <Routes data-oid="rw9-_fw">
+          <Route
+            path="/"
+            element={<Index data-oid="ga7:u5v" />}
+            data-oid="_cc::wq"
+          />
+
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-          <Route path="*" element={<NotFound />} />
+          <Route
+            path="*"
+            element={<NotFound data-oid="2lyd-_k" />}
+            data-oid="5kx.3yb"
+          />
         </Routes>
       </BrowserRouter>
     </TooltipProvider>
